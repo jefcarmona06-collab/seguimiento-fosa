@@ -17,62 +17,12 @@
         input[type=number] { -moz-appearance: textfield; }
         
         @media print { 
-            @page { size: A4 portrait; margin: 0.6cm; }
-
-            /* Colores y fondo */
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            body { background-color: white !important; font-size: 8px !important; }
-
-            /* Ocultar controles interactivos */
+            @page { size: letter; margin: 1cm; }
+            body { background-color: white !important; }
             .no-print { display: none !important; }
-            input[type=number] { border: none !important; background: transparent !important; }
-
-            /* Forzar siempre la vista Global en el PDF */
-            #view-resumen { display: block !important; }
-            #view-detalle { display: none !important; }
-            #view-reporte { display: none !important; }
-
-            /* Escalar todo el contenido para caber en una hoja */
-            #capture-area { 
-                max-width: 100% !important;
-                padding: 0 !important;
-                padding-bottom: 0 !important;
-                zoom: 0.82;
-            }
-
-            /* Encabezado compacto */
-            header { margin-bottom: 6px !important; padding-bottom: 6px !important; }
-            header h1 { font-size: 13px !important; }
-            header p { font-size: 7px !important; }
-            header .w-16 { width: 36px !important; height: 36px !important; }
-
-            /* Pestañas ocultas */
-            .flex.border-b { display: none !important; }
-
-            /* Dashboard más pequeño */
-            .bg-white.p-6.rounded-3xl { padding: 8px !important; margin-bottom: 6px !important; }
-            .w-44.h-44 { width: 80px !important; height: 80px !important; }
-            #percentLabel { font-size: 16px !important; }
-            #totalRecaudado { font-size: 18px !important; }
-
-            /* Grid de pisos en 3 columnas para caber todo */
-            #summaryGrid { 
-                grid-template-columns: repeat(3, 1fr) !important; 
-                gap: 0 !important;
-                column-gap: 12px !important;
-            }
-
-            /* Celdas del grid más compactas */
-            #summaryGrid > div { padding-top: 2px !important; padding-bottom: 2px !important; }
-
-            /* Sombras eliminadas */
-            .shadow-sm, .shadow, .shadow-lg, .shadow-md, .shadow-xl { box-shadow: none !important; }
-            
-            /* Barra de progreso visible */
-            #progressBar { print-color-adjust: exact !important; }
-
-            /* Pie de página compacto */
-            .border-t-2 { margin-top: 6px !important; padding-top: 4px !important; }
+            .shadow-sm { box-shadow: none !important; border: 1px solid #e2e8f0 !important; }
+            .print-compact { padding: 0.5rem !important; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
     </style>
 </head>
@@ -373,7 +323,10 @@
                     data = fetchedData.map(d => ({
                         ...d,
                         monto: Number(d.monto) || (d.pagado ? CUOTA : 0),
-                        montoBs: Number(d.montoBs) || 0
+                        montoBs: Number(d.montoBs) || 0,
+                        fecha: d.fecha || '',
+                        referencia: d.referencia || '',
+                        banco: d.banco || ''
                     }));
                 } else {
                     data = [];
@@ -385,7 +338,10 @@
                                 id: `${f}-${a}`, piso: f, apto: a, 
                                 pagado: pagado,
                                 monto: pagado ? CUOTA : 0,
-                                montoBs: 0
+                                montoBs: 0,
+                                fecha: '',
+                                referencia: '',
+                                banco: ''
                             });
                         }
                     }
@@ -399,7 +355,7 @@
                 alert("Error al cargar los datos. Se usará una versión de solo lectura temporal.");
                 data = [];
                 for (let f = PISOS; f >= 1; f--) {
-                    for (let a = 1; a <= APTOS_POR_PISO; a++) data.push({ id: `${f}-${a}`, piso: f, apto: a, pagado: false, monto: 0, montoBs: 0 });
+                    for (let a = 1; a <= APTOS_POR_PISO; a++) data.push({ id: `${f}-${a}`, piso: f, apto: a, pagado: false, monto: 0, montoBs: 0, fecha: '', referencia: '', banco: '' });
                 }
             } finally {
                 showLoading(false);
@@ -422,9 +378,10 @@
             render();
             
             try {
+                const payload = { id: id, pagado: nuevoEstado, monto: nuevoMonto, montoBs: nuevoMontoBs, fecha: data[index].fecha, referencia: data[index].referencia, banco: data[index].banco };
                 await fetch(SCRIPT_URL, {
                     method: 'POST',
-                    body: JSON.stringify({ id: id, pagado: nuevoEstado, monto: nuevoMonto, montoBs: nuevoMontoBs })
+                    body: JSON.stringify(payload)
                 });
             } catch (error) {
                 data[index].pagado = estadoAnterior;
@@ -460,9 +417,10 @@
             render();
             
             try {
+                const payload = { id: id, pagado: nuevoEstado, monto: nuevoMonto, montoBs: nuevoMontoBs, fecha: data[index].fecha, referencia: data[index].referencia, banco: data[index].banco };
                 await fetch(SCRIPT_URL, {
                     method: 'POST',
-                    body: JSON.stringify({ id: id, pagado: nuevoEstado, monto: nuevoMonto, montoBs: nuevoMontoBs })
+                    body: JSON.stringify(payload)
                 });
             } catch (error) {
                 data[index].pagado = estadoAnterior;
@@ -470,6 +428,31 @@
                 data[index].montoBs = montoBsAnterior;
                 render();
                 alert("Hubo un error al guardar el abono en la nube.");
+            }
+        }
+
+        async function actualizarExtra(id, campo, valor) {
+            const index = data.findIndex(item => item.id === id);
+            const valorAnterior = data[index][campo];
+            data[index][campo] = valor;
+            
+            try {
+                const payload = { 
+                    id: id, 
+                    pagado: data[index].pagado, 
+                    monto: data[index].monto, 
+                    montoBs: data[index].montoBs || 0,
+                    fecha: data[index].fecha,
+                    referencia: data[index].referencia,
+                    banco: data[index].banco
+                };
+                await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+            } catch (error) {
+                data[index][campo] = valorAnterior;
+                console.error("Hubo un error al guardar " + campo);
             }
         }
 
@@ -621,6 +604,22 @@
                                     </div>
                                 </div>
                                 <div class="w-4 flex justify-center">${statusIcon}</div>
+                            </div>
+                        </div>
+                        <div class="px-2 pb-2 mt-[-2px] rounded-b border-x border-b transition-all ${bgClass} border-t-0" onclick="event.stopPropagation()">
+                            <div class="pt-2 border-t border-slate-200/60 flex flex-col gap-1.5">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] text-slate-500 font-bold">Fecha</span>
+                                    <input type="date" value="${apt.fecha || ''}" onchange="actualizarExtra('${apt.id}', 'fecha', this.value)" class="w-24 text-right text-[10px] font-bold text-slate-700 outline-none bg-transparent border-b border-slate-200 focus:border-blue-400" />
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] text-slate-500 font-bold">Ref.</span>
+                                    <input type="text" placeholder="Ej. 1234" value="${apt.referencia || ''}" onchange="actualizarExtra('${apt.id}', 'referencia', this.value)" class="w-24 text-right text-[10px] font-bold text-slate-700 outline-none bg-transparent border-b border-slate-200 focus:border-blue-400" />
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] text-slate-500 font-bold">Banco</span>
+                                    <input type="text" placeholder="Ej. Banesco" value="${apt.banco || ''}" onchange="actualizarExtra('${apt.id}', 'banco', this.value)" class="w-24 text-right text-[10px] font-bold text-slate-700 outline-none bg-transparent border-b border-slate-200 focus:border-blue-400" />
+                                </div>
                             </div>
                         </div>`;
                 });
